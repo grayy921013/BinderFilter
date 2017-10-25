@@ -48,9 +48,11 @@ static void copy_file_to_file(char* filename_src, char* filename_dst);
 
 //static struct bf_battery_level_struct battery_level;
 static struct bf_filters all_filters = {0, NULL};
+static struct bf_contacts all_contacts = {0, NULL};
 static struct bf_context_values_struct context_values = {0,0,{0},{0}, 0};
 
 static int read_persistent_policy_successful = READ_FAIL;
+static int read_contact_successful = READ_FAIL;
 
 static struct dentry *bf_debugfs_dir_entry_root;
 
@@ -148,7 +150,7 @@ static void print_bf_buffer_log_entry(struct seq_file *m,
 	if (buf <= 0 || e->len <= 0) {
 		seq_printf(m, "buffer: (null)\n");
 		return;
-	} 
+	}
 	seq_printf(m, "buffer %ld: ", e->num);
 
 	for (i=0; i<e->len; i++) {
@@ -161,7 +163,7 @@ static void print_bf_buffer_log_entry(struct seq_file *m,
 	}
 	seq_puts(m, "\n");
 
-	kfree(e->addr);	
+	kfree(e->addr);
 	e->addr = NULL;
 }
 
@@ -188,7 +190,7 @@ BF_DEBUG_ENTRY(buffers);
 
 
 // returns new pointer with new_size size, frees old pointer
-static char* bf_realloc(char* oldp, int new_size) 
+static char* bf_realloc(char* oldp, int new_size)
 {
 	char* newp;
 
@@ -261,7 +263,7 @@ static void write_file(char *filename, char *data)
 
   set_fs(KERNEL_DS);
   fd = sys_open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-  
+
   if (fd >= 0) {
     __write(fd, data, pos);
   } else {
@@ -287,7 +289,7 @@ static void copy_file_to_file(char* filename_src, char* filename_dst)
 	fd_write = sys_open(filename_dst, O_WRONLY|O_CREAT|O_TRUNC, 0644);
 
 	if (fd_read < 0 || fd_write < 0) {
-		printk(KERN_INFO "BINDERFILTER: copy_file_to_file: bad fd, write: %d, read: %d\n", 
+		printk(KERN_INFO "BINDERFILTER: copy_file_to_file: bad fd, write: %d, read: %d\n",
 			fd_write, fd_read);
 		set_fs(old_fs);
 		return;
@@ -309,13 +311,13 @@ static void copy_file_to_file(char* filename_src, char* filename_dst)
 		vfs_write(write_file, read_buf, read_len, &pos);
     	fput(write_file);
 	}
-	
+
 	sys_close(fd_read);
 	sys_close(fd_write);
 	set_fs(old_fs);
 }
 
-static int add_to_buffer(char* buffer, int c, char val) 
+static int add_to_buffer(char* buffer, int c, char val)
 {
 	char temp[4];
 
@@ -328,7 +330,7 @@ static int add_to_buffer(char* buffer, int c, char val)
 		buffer[c++] = temp[0];
 		if (temp[1] != '\0') { buffer[c++] = temp[1]; }
 		if (temp[2] != '\0') { buffer[c++] = temp[2]; }
-		
+
 		buffer[c++] = ')';
 	} else if ((int)val < 0) {
 		buffer[c++] = '(';
@@ -338,7 +340,7 @@ static int add_to_buffer(char* buffer, int c, char val)
 		buffer[c++] = temp[0];
 		if (temp[1] != '\0') { buffer[c++] = temp[1]; }
 		if (temp[2] != '\0') { buffer[c++] = temp[2]; }
-		
+
 		buffer[c++] = ')';
 	}
 
@@ -348,7 +350,7 @@ static int add_to_buffer(char* buffer, int c, char val)
 /*
 	chars are 16 bits (http://androidxref.com/6.0.1_r10/xref/frameworks/base/core/jni/android_os_Parcel.cpp readString())
 */
-static void print_string(const char* buf, size_t data_size, int max_buffer_size) 
+static void print_string(const char* buf, size_t data_size, int max_buffer_size)
 {
 	int i;
 	char val[2];
@@ -377,9 +379,9 @@ static void print_string(const char* buf, size_t data_size, int max_buffer_size)
 		c = add_to_buffer(buffer, c, val[0]);
 
 		// for 16 bit chars
-		if (val[1] != 0) {		
+		if (val[1] != 0) {
 			c = add_to_buffer(buffer, c, val[1]);
-		} 
+		}
 		// else {
 		// 	buffer[c++] = '*';
 		// }
@@ -517,14 +519,14 @@ static char* get_gps_user_value(char* user_gps_bytes)
 			return byte_array;
 		}
 		//printk(KERN_INFO "BINDERFILTER: string_val: %s, long: %d\n", string_val, (int)long_val);
-		byte_array[i] = (char)((int)long_val); 
+		byte_array[i] = (char)((int)long_val);
 		i++;
 		string_val = strsep(&user_gps_bytes_p, ".");
 	}
 
 	kfree(user_gps_bytes_p);
 	return byte_array;
-} 
+}
 
 /*
 {(0)@(29)(0)android.content.IIntentSender(0)(0)(0)(1)(0)(255)(255)(255)(255)(0)(0)(255)(255)(255)(255)
@@ -563,7 +565,7 @@ static void set_gps_value(char* buffer, char* user_buf_start)
 		if (state_location != NULL) {
 			offset = ((state_location-buffer) + 7+1+4+4) * 2;
 			offset2 = ((state_location2-buffer) + 7+1+4+4) * 2;
-			
+
 			memcpy(float_char_output, user_buf_start+offset, 16);
 
 			// temporary context from gps
@@ -576,12 +578,12 @@ static void set_gps_value(char* buffer, char* user_buf_start)
 				while (rule != NULL) {
 					if (rule->block_or_modify == MODIFY_ACTION &&
 						strcmp(rule->message, "android.permission.ACCESS_FINE_LOCATION") == 0) {
-												
+
 						gps_bytes = get_gps_user_value(rule->data);
 						memcpy(user_buf_start+offset, gps_bytes, 16);
 						memcpy(user_buf_start+offset2, gps_bytes, 16);
 
-						// printk(KERN_INFO "BINDERFILTER: memcpyd data %d %d %d", 
+						// printk(KERN_INFO "BINDERFILTER: memcpyd data %d %d %d",
 						// 	(int)gps_bytes[7], (int)gps_bytes[6], (int)gps_bytes[5]);
 						// print_string(user_buf_start, 900, 900);
 
@@ -630,7 +632,7 @@ static void set_gps_value2(char* buffer, char* user_buf_start)
 				while (rule != NULL) {
 					if (rule->block_or_modify == MODIFY_ACTION &&
 						strcmp(rule->message, "android.permission.ACCESS_FINE_LOCATION") == 0) {
-												
+
 						gps_bytes = get_gps_user_value(rule->data);
 						memcpy(user_buf_start+offset, gps_bytes, 16);
 						memcpy(user_buf_start+offset2, gps_bytes, 16);
@@ -657,7 +659,7 @@ static void set_app_context(char* buffer)
 	struct app_context_entry* e = context_values.app_context_queue;
 	const char* state_off = "android.intent.action.PACKAGE_RESTARTED";
 	int flag = 0; 	// 1 for state_on exists, 2 for state_off exists
-	
+
 	if (strlen(buffer) < strlen(state_off)) {
 		return;
 	}
@@ -678,12 +680,12 @@ static void set_app_context(char* buffer)
 			e->state = flag;
 			//printk(KERN_INFO "BINDERFILTER: setting state for package %s to %d\n", e->package_name, e->state);
 			return;
-		} 
+		}
 		e = e->next;
 	}
 }
 
-static void set_context_values(const char* user_buf, size_t data_size, char* ascii_buffer) 
+static void set_context_values(const char* user_buf, size_t data_size, char* ascii_buffer)
 {
 	set_bluetooth_value(ascii_buffer, (char*)user_buf);
 	set_wifi_value(ascii_buffer, (char*)user_buf);
@@ -692,7 +694,7 @@ static void set_context_values(const char* user_buf, size_t data_size, char* asc
 }
 
 // for testing
-// static void set_battery_level(const char* user_buf, char* ascii_buffer) 
+// static void set_battery_level(const char* user_buf, char* ascii_buffer)
 // {
 // 	char context_defined_battery_level;
 // 	char* level_location;
@@ -719,7 +721,7 @@ static void set_context_values(const char* user_buf, size_t data_size, char* asc
 // 	return;
 // }
 
-static void block_message(char* user_buf, size_t data_size, char* ascii_buffer, const char* message) 
+static void block_message(char* user_buf, size_t data_size, char* ascii_buffer, const char* message)
 {
 	char* message_location = strstr(ascii_buffer, message);
 
@@ -730,7 +732,7 @@ static void block_message(char* user_buf, size_t data_size, char* ascii_buffer, 
 }
 
 /* convert from 16 bit chars and remove non characters for string matching */
-static char* get_string_matching_buffer(char* buf, size_t data_size) 
+static char* get_string_matching_buffer(char* buf, size_t data_size)
 {
 	int i;
 	char val;
@@ -760,7 +762,7 @@ static char* get_string_matching_buffer(char* buf, size_t data_size)
 }
 
 // returns 1 on app is running
-static int app_running(char* package_name) 
+static int app_running(char* package_name)
 {
 	struct app_context_entry* e = context_values.app_context_queue;
 
@@ -778,7 +780,7 @@ static int app_running(char* package_name)
 }
 
 // returns 1 on context matches rule specifications
-static int context_matches(struct bf_filter_rule* rule, int euid) 
+static int context_matches(struct bf_filter_rule* rule, int euid)
 {
 	if (rule->uid != euid) {
 		return 0;
@@ -802,7 +804,7 @@ static int context_matches(struct bf_filter_rule* rule, int euid)
 	}
 }
 
-// modifies the user_message with char* data 
+// modifies the user_message with char* data
 // only replaces the original string with as many bytes as the original string
 // NOTE: we're searching for strings here (and in the code in general): lookg
 // at ascii_buffer reduces the original buffer from 16bit chars to 8but chars
@@ -837,7 +839,7 @@ static void modify_arbitrary_message(char* ascii_buffer, char* user_buf, char* m
 	message_location = strstr(ascii_buffer, user_message);
 	if (message_location != NULL) {
 
-		// 8 bit duplicated to 16 bit chars, hack-y but simple 
+		// 8 bit duplicated to 16 bit chars, hack-y but simple
 		user_data = (char*) kzalloc(strlen(data) * 2 + 1, GFP_KERNEL);
 		for (i=0; i<strlen(data)*2; i++) {
 			if (i%2) {
@@ -864,7 +866,7 @@ static void modify_camera_message(char* ascii_buffer, char* data)
 {
 	char* message_location;
 	char* filepath;
-	char* existing_file; 
+	char* existing_file;
 
 	//printk(KERN_INFO "BINDERFILTER: modifying camera message\n");
 
@@ -882,10 +884,10 @@ static void modify_camera_message(char* ascii_buffer, char* data)
 	}
 
 	kfree(filepath);
-} 
+}
 
-static void modify_message(char* user_buf, char* ascii_buffer, char* data, char* message) 
-{	
+static void modify_message(char* user_buf, char* ascii_buffer, char* data, char* message)
+{
 	if (data == NULL || message == NULL) {
 		return;
 	}
@@ -896,20 +898,21 @@ static void modify_message(char* user_buf, char* ascii_buffer, char* data, char*
 
 	if (strcmp(message, "android.permission.CAMERA") == 0) {
 		modify_camera_message(ascii_buffer, data);
-	} 
+	}
 }
 
-static void apply_filter(char* user_buf, size_t data_size, int euid) 
+static void apply_filter(char* user_buf, size_t data_size, int euid)
 {
 	char* ascii_buffer = get_string_matching_buffer(user_buf, data_size);
 	struct bf_filter_rule* rule = all_filters.filters_list_head;
+	struct bf_contact_info* contact = all_contacts.contact_list_head;
 
 	if (ascii_buffer == NULL) {
 		return;
 	}
 
 	//set_battery_level(user_buf, ascii_buffer);
-	
+
 	// only get sensor values from the system
 	if (euid == 1000) {
 		set_context_values(user_buf, data_size, ascii_buffer);
@@ -936,13 +939,21 @@ static void apply_filter(char* user_buf, size_t data_size, int euid)
 		}
 	}
 
+	// filter contact info
+	if (binder_filter_block_messages == 1) {
+		while (contact != NULL) {
+			block_message(user_buf, data_size, ascii_buffer, contact->number);
+			contact = contact->next;
+		}
+	}
+
 	// if (strstr(ascii_buffer, "android.content.IIntentSender") != NULL) {
 	// 	print_string(user_buf, data_size, 1500);
 	// }
 	kfree(ascii_buffer);
 }
 
-static void print_binder_transaction_data(char* data, size_t data_size, int euid, void* offp, size_t offsets_size) 
+static void print_binder_transaction_data(char* data, size_t data_size, int euid, void* offp, size_t offsets_size)
 {
 #ifdef BF_SEQ_FILE_OUTPUT
 	struct bf_buffer_log_entry *e;
@@ -966,7 +977,7 @@ static void print_binder_transaction_data(char* data, size_t data_size, int euid
 	printk(KERN_INFO "BINDERFILTER: uid: %d\n", euid);
 
 	printk(KERN_INFO "BINDERFILTER: data");
-	print_string(data, data_size, MAX_BUFFER_SIZE);	
+	print_string(data, data_size, MAX_BUFFER_SIZE);
 
 	printk(KERN_INFO "BINDERFILTER: offsets");
 	print_string((char*)offp, offsets_size, MAX_BUFFER_SIZE);
@@ -1049,8 +1060,8 @@ static void add_app_running_context(char* context_string_value)
 			return;
 		}
 		e = e->next;
-	}	
-	
+	}
+
 	e = (struct app_context_entry*) kzalloc(sizeof(struct app_context_entry), GFP_KERNEL);
 	e->package_name = (char*) kzalloc(strlen(context_string_value)+1, GFP_KERNEL);
 	strncpy(e->package_name, context_string_value, strlen(context_string_value));
@@ -1074,7 +1085,7 @@ static void remove_app_running_context(char* context_string_value)
 	if (context_string_value == NULL || strlen(context_string_value) < 1) {
 		return;
 	}
-	
+
 	while (e != NULL) {
 		if (strcmp(e->package_name, context_string_value) == 0) {
 			if (prev != NULL) {
@@ -1092,15 +1103,15 @@ static void remove_app_running_context(char* context_string_value)
 	}
 }
 
-static void add_filter(struct bf_user_filter* filter) 
+static void add_filter(struct bf_user_filter* filter)
 {
 	struct bf_filter_rule* rule;
 	int block_or_modify = filter->action;
 	int uid = filter->uid;
-	char* message = filter->message; 
+	char* message = filter->message;
 	char* data = filter->data;
-	int context = filter->context; 
-	int context_type = filter->context_type; 
+	int context = filter->context;
+	int context_type = filter->context_type;
 	int context_int_value = filter->context_int_value;
     char* context_string_value = filter->context_string_value;
 
@@ -1108,11 +1119,11 @@ static void add_filter(struct bf_user_filter* filter)
 		return;
 	}
 
-	rule = (struct bf_filter_rule*) 
+	rule = (struct bf_filter_rule*)
 						kzalloc(sizeof(struct bf_filter_rule), GFP_KERNEL);
 	rule->message = (char*) kzalloc(strlen(message)+1, GFP_KERNEL);
 	rule->data = (char*) kzalloc(strlen(data)+1, GFP_KERNEL);
-	
+
 	rule->block_or_modify = block_or_modify;
 	rule->uid = uid;
 
@@ -1150,15 +1161,15 @@ static void add_filter(struct bf_user_filter* filter)
 	all_filters.filters_list_head = rule;
 	all_filters.num_filters += 1;
 
-	printk(KERN_INFO "BINDERFILTER: added rule: %d %d %s %s\n", 
+	printk(KERN_INFO "BINDERFILTER: added rule: %d %d %s %s\n",
 		rule->uid, rule->block_or_modify, rule->message, rule->data);
 
 	if (context > 0) {
 		if (context_type == CONTEXT_TYPE_INT) {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n",
 				rule->context, rule->context_type, rule->context_int_value);
 		} else {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n",
 				rule->context, rule->context_type, rule->context_string_value);
 		}
 	}
@@ -1170,7 +1181,7 @@ static int filter_cmp(struct bf_filter_rule* rule, struct bf_user_filter* filter
 	int firstCheck = 0;
 	int secondCheck = 1;
 
-	firstCheck = (rule->uid == filter->uid) && 
+	firstCheck = (rule->uid == filter->uid) &&
 				(rule->block_or_modify == filter->action) &&
 				strcmp(rule->message, filter->message) == 0 &&
 				strcmp(rule->data, filter->data) == 0 &&
@@ -1180,11 +1191,11 @@ static int filter_cmp(struct bf_filter_rule* rule, struct bf_user_filter* filter
 		secondCheck = 0;
 	}
 	if (rule->context > 0) {
-		if (rule->context_type == CONTEXT_TYPE_INT && 
+		if (rule->context_type == CONTEXT_TYPE_INT &&
 			rule->context_int_value != filter->context_int_value) {
 			secondCheck = 0;
-		} 
-		if (rule->context_type == CONTEXT_TYPE_STRING && 
+		}
+		if (rule->context_type == CONTEXT_TYPE_STRING &&
 			strcmp(rule->context_string_value, filter->context_string_value) != 0) {
 			secondCheck = 0;
 		}
@@ -1193,7 +1204,7 @@ static int filter_cmp(struct bf_filter_rule* rule, struct bf_user_filter* filter
 	return (firstCheck == 1) && (secondCheck == 1);
 }
 
-static void remove_filter(struct bf_user_filter* filter) 
+static void remove_filter(struct bf_user_filter* filter)
 {
 	struct bf_filter_rule* rule;
 	struct bf_filter_rule* prev = NULL;
@@ -1209,14 +1220,14 @@ static void remove_filter(struct bf_user_filter* filter)
 		filter->action = MODIFY_ACTION;
 	}
 
-	printk(KERN_INFO "BINDERFILTER: remove: %d %d %s %s\n", 
+	printk(KERN_INFO "BINDERFILTER: remove: %d %d %s %s\n",
 			filter->uid, filter->action, filter->message, filter->data);
 	if (filter->context > 0) {
 		if (filter->context_type == CONTEXT_TYPE_INT) {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n",
 				filter->context, filter->context_type, filter->context_int_value);
 		} else {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n",
 				filter->context, filter->context_type, filter->context_string_value);
 		}
 	}
@@ -1224,8 +1235,8 @@ static void remove_filter(struct bf_user_filter* filter)
 	rule = all_filters.filters_list_head;
 
 	while (rule != NULL) {
-		printk(KERN_INFO "BINDERFILTER: rule: %d, %d, %s, %s, %d\n", 
-			rule->uid, rule->block_or_modify, rule->message, rule->data, 
+		printk(KERN_INFO "BINDERFILTER: rule: %d, %d, %s, %s, %d\n",
+			rule->uid, rule->block_or_modify, rule->message, rule->data,
 			rule->context);
 
 		if (filter_cmp(rule, filter) == 1) {
@@ -1233,7 +1244,7 @@ static void remove_filter(struct bf_user_filter* filter)
 
 			// remove from list
 			if (prev == NULL) {
-				all_filters.filters_list_head = rule->next;	
+				all_filters.filters_list_head = rule->next;
 			} else {
 				prev->next = rule->next;
 			}
@@ -1252,11 +1263,11 @@ static void remove_filter(struct bf_user_filter* filter)
 		prev = rule;
 		rule = rule->next;
 	}
-	
+
 	return;
 }
 
-static int index_of(char* str, char c, int start) 
+static int index_of(char* str, char c, int start)
 {
 	int len;
 	int i;
@@ -1280,7 +1291,7 @@ static int index_of(char* str, char c, int start)
 }
 
 // message:uid:action_code:context:(context_type:context_val:)(data:)
-static int parse_policy_context(char* policy, int starting_index, struct bf_user_filter* filter) 
+static int parse_policy_context(char* policy, int starting_index, struct bf_user_filter* filter)
 {
 	int index = starting_index;
 	int old_index;
@@ -1300,7 +1311,7 @@ static int parse_policy_context(char* policy, int starting_index, struct bf_user
 		context_str = (char*) kzalloc(size+2, GFP_KERNEL);
 		strncpy(context_str, (policy+old_index+1), size-1);
 		context_str[size+1] = '\0';
-		
+
 		if (kstrtol(context_str, 10, &context) != 0) {
 			printk(KERN_INFO "BINDERFILTER: could not parse context! {%s}\n", context_str);
 			context = -1;
@@ -1323,7 +1334,7 @@ static int parse_policy_context(char* policy, int starting_index, struct bf_user
 		context_type_str = (char*) kzalloc(size+2, GFP_KERNEL);
 		strncpy(context_type_str, (policy+old_index+1), size-1);
 		context_type_str[size+1] = '\0';
-		
+
 		if (kstrtol(context_type_str, 10, &context_type) != 0) {
 			printk(KERN_INFO "BINDERFILTER: could not parse context type! {%s}\n", context_type_str);
 			context_type = -1;
@@ -1340,7 +1351,7 @@ static int parse_policy_context(char* policy, int starting_index, struct bf_user
 			context_int_value_str = (char*) kzalloc(size+2, GFP_KERNEL);
 			strncpy(context_int_value_str, (policy+old_index+1), size-1);
 			context_int_value_str[size+1] = '\0';
-			
+
 			if (kstrtol(context_int_value_str, 10, &context_int_value) != 0) {
 				printk(KERN_INFO "BINDERFILTER: could not parse context int value! {%s}\n", context_int_value_str);
 				context_int_value = -1;
@@ -1358,7 +1369,7 @@ static int parse_policy_context(char* policy, int starting_index, struct bf_user
 			filter->context_string_value[size+1] = '\0';
 		}
 	} else {
-		printk(KERN_INFO "BINDERFILTER: bad context type! {%d}\n", (int)context_type);		
+		printk(KERN_INFO "BINDERFILTER: bad context type! {%d}\n", (int)context_type);
 		filter->context = -1;
 	}
 
@@ -1376,7 +1387,7 @@ static int parse_policy_context(char* policy, int starting_index, struct bf_user
 }
 
 // message:uid:action_code:context:(context_type:context_val:)(data:)
-static void parse_policy_line(char* policy, struct bf_user_filter* filter) 
+static void parse_policy_line(char* policy, struct bf_user_filter* filter)
 {
 	char* action_str = NULL;
 	char* uid_str = NULL;
@@ -1418,7 +1429,7 @@ static void parse_policy_line(char* policy, struct bf_user_filter* filter)
 		action_str = (char*) kzalloc(size+2, GFP_KERNEL);
 		strncpy(action_str, (policy+old_index+1), size-1);
 		action_str[size+1] = '\0';
-		
+
 		if (kstrtol(action_str, 10, &action) != 0) {
 			printk(KERN_INFO "BINDERFILTER: could not parse action! {%s}\n", action_str);
 			action = -1;
@@ -1464,7 +1475,7 @@ static void free_bf_user_filter(struct bf_user_filter* f)
 
 static struct bf_user_filter* init_bf_user_filter(void)
 {
-	struct bf_user_filter* filter = 
+	struct bf_user_filter* filter =
 		(struct bf_user_filter*) kzalloc(sizeof(struct bf_user_filter), GFP_KERNEL);
 
 	filter->action = -1;
@@ -1489,7 +1500,7 @@ static int check_filter_default_values(struct bf_user_filter* filter)
 		return 0;
 	}
 
-	firstCheck = (filter->action != -1) && (filter->uid != -1) 
+	firstCheck = (filter->action != -1) && (filter->uid != -1)
 			&& (filter->message != NULL) && (filter->context != -1);
 
 	if (filter->data == NULL) {
@@ -1514,22 +1525,22 @@ static int check_filter_default_values(struct bf_user_filter* filter)
 	return (firstCheck == 1) && (secondCheck == 1);
 }
 
-static void apply_policy_line(char* policy) 
+static void apply_policy_line(char* policy)
 {
 	struct bf_user_filter* filter = init_bf_user_filter();
 
 	parse_policy_line(policy, filter);
 
 	printk(KERN_INFO "BINDERFILTER: reading policy: {%s}\n", policy);
-	printk(KERN_INFO "BINDERFILTER: parsed policy: {%s} {%d} {%d} {%d} {%s}\n", 
+	printk(KERN_INFO "BINDERFILTER: parsed policy: {%s} {%d} {%d} {%d} {%s}\n",
 		filter->message, filter->uid, filter->action, filter->context, filter->data);
 
 	if (filter->context > 0) {
 		if (filter->context_type == CONTEXT_TYPE_INT) {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %d\n",
 				filter->context, filter->context_type, filter->context_int_value);
 		} else {
-			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n", 
+			printk(KERN_INFO "BINDERFILTER: with context: %d %d %s\n",
 				filter->context, filter->context_type, filter->context_string_value);
 		}
 	}
@@ -1539,7 +1550,7 @@ static void apply_policy_line(char* policy)
 	} else {
 		printk(KERN_INFO "BINDERFILTER: could not parse policy!\n");
 	}
-	
+
 	if (policy != NULL) {
 		kfree(policy);
 	}
@@ -1548,7 +1559,17 @@ static void apply_policy_line(char* policy)
 	}
 }
 
-static void apply_policy(char* policy) 
+static void apply_contact_line(char* line)
+{
+	struct bf_contact_info* info =
+		(struct bf_contact_info*) kzalloc(sizeof(struct bf_contact_info), GFP_KERNEL);
+	info->number = line;
+	all_contacts.num_contacts += 1;
+	info->next = all_contacts.contact_list_head;
+	all_contacts.contact_list_head = info;
+}
+
+static void apply_policy(char* policy)
 {
 	char* line;
 	int index;
@@ -1581,7 +1602,7 @@ static void apply_policy(char* policy)
 
 }
 
-static void read_persistent_policy(void) 
+static void read_persistent_policy(void)
 {
 	int success = READ_FAIL;
 	char* policy;
@@ -1591,9 +1612,54 @@ static void read_persistent_policy(void)
 
 	if (success == READ_SUCCESS) {
 		apply_policy(policy);
-	} 
+	}
 
 	kfree(policy);
+}
+
+static void parse_contact(char* contact)
+{
+	char* line;
+	int index;
+	int old_index = 0;
+	int size;
+
+	if (contact == NULL) {
+		return;
+	}
+
+	while (1) {
+		index = index_of(contact, ',', old_index);
+		if (index == -1) {
+			return;
+		}
+
+		size = index-old_index;
+		line = (char*) kzalloc(size+2, GFP_KERNEL);
+		strncpy(line, contact+old_index, size);
+		line[size] = '\0';
+		printk(KERN_INFO "BINDERFILTER: line: {%s}\n", line);
+
+
+		apply_contact_line(line);
+		old_index = index + 1;
+	}
+
+}
+
+static void read_contact(void)
+{
+	int success = READ_FAIL;
+	char* contact;
+
+	contact = read_file("/data/local/tmp/bf.contact", &success);
+	read_contact_successful = success;
+
+	if (success == READ_SUCCESS) {
+		parse_contact(contact);
+	}
+
+	kfree(contact);
 }
 
 // ENTRY POINT FROM binder.c
@@ -1611,6 +1677,9 @@ int filter_binder_message(unsigned long addr, signed long size, int reply, int e
 	// only reads once successfully
 	if (read_persistent_policy_successful != READ_SUCCESS) {
 		read_persistent_policy();
+	}
+	if (read_contact_successful != READ_SUCCESS) {
+		read_contact();
 	}
 
 	if (binder_filter_print_buffer_contents == 1) {
@@ -1643,16 +1712,16 @@ static char* get_policy_string(void)
 
 		if (rule->context > 0) {
 			if (rule->context_type == CONTEXT_TYPE_INT) {
-				sprintf(temp, "%s:%d:%d:%d:%d:%d:", 
-					rule->message, rule->uid, rule->block_or_modify, 
+				sprintf(temp, "%s:%d:%d:%d:%d:%d:",
+					rule->message, rule->uid, rule->block_or_modify,
 					rule->context, rule->context_type, rule->context_int_value);
 			} else {
-				sprintf(temp, "%s:%d:%d:%d:%d:%s:", 
-					rule->message, rule->uid, rule->block_or_modify, 
+				sprintf(temp, "%s:%d:%d:%d:%d:%s:",
+					rule->message, rule->uid, rule->block_or_modify,
 					rule->context, rule->context_type, rule->context_string_value);
 			}
 		} else {
-			sprintf(temp, "%s:%d:%d:%d:", 
+			sprintf(temp, "%s:%d:%d:%d:",
 				rule->message, rule->uid, rule->block_or_modify, rule->context);
 		}
 
@@ -1678,13 +1747,13 @@ static char* get_policy_string(void)
 	return policy_str;
 }
 
-static void init_context_values(void) 
+static void init_context_values(void)
 {
-	context_values.bluetooth_enabled = CONTEXT_STATE_UNKNOWN;	
-	context_values.wifi_enabled = CONTEXT_STATE_UNKNOWN;	
+	context_values.bluetooth_enabled = CONTEXT_STATE_UNKNOWN;
+	context_values.wifi_enabled = CONTEXT_STATE_UNKNOWN;
 }
 
-static void write_persistent_policy(void) 
+static void write_persistent_policy(void)
 {
 	char* policy = get_policy_string();
 	//printk(KERN_INFO "BINDERFILTER: writing policy: {%s}\n", policy);
@@ -1700,13 +1769,13 @@ static int bf_open(struct inode *nodp, struct file *filp)
 
 // reports policy info
 static ssize_t bf_read(struct file * file, char * buf, size_t count, loff_t *ppos)
-{	
+{
 	int len;
 	char* ret_str;
 
 	ret_str = get_policy_string();
 	len = strlen(ret_str); /* Don't include the null byte. */
-    
+
     if (count < len) {
         return -EINVAL;
     }
@@ -1754,7 +1823,7 @@ static ssize_t bf_write(struct file *file, const char __user *buf, size_t len, l
 			remove_filter(user_filter);
 			break;
 		default:
-			printk(KERN_INFO "BINDERFILTER: bf_write bad action %d\n", 
+			printk(KERN_INFO "BINDERFILTER: bf_write bad action %d\n",
 				user_filter->action);
 			return 0;
 	}
