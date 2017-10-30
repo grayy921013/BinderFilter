@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.zhehui.myapplication">
-
+    package="com.example.zhehui.receiveapplication2">
 
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
@@ -18,7 +17,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".Main2Activity"></activity>
     </application>
 
 </manifest>

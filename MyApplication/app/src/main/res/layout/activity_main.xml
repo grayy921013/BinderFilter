@@ -25,4 +25,16 @@
         android:layout_alignParentStart="true"
         android:layout_marginTop="50dp"
         android:id="@+id/send_btn" />
+
+    <Button
+        android:text="Send"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/send_btn2"
+        android:layout_alignBaseline="@+id/send_btn"
+        android:layout_alignBottom="@+id/send_btn"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginRight="30dp"
+        android:layout_marginEnd="30dp" />
 </RelativeLayout>

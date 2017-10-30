@@ -1,4 +1,4 @@
-package com.example.zhehui.receiveapplication;
+package com.example.zhehui.receiveapplication2;
 
 import android.content.Intent;
 import android.support.v7.app.AppCompatActivity;
