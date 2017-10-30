@@ -22,7 +22,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 Intent sendIntent = getPackageManager().getLaunchIntentForPackage("com.example.zhehui.receiveapplication");
-                sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519663.");
+                sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519664.");
                 startActivity(sendIntent);
             }
         });
@@ -30,7 +30,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 Intent sendIntent = getPackageManager().getLaunchIntentForPackage("com.example.zhehui.receiveapplication2");
-                sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519663.");
+                sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519664.");
                 startActivity(sendIntent);
             }
         });
