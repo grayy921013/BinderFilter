@@ -93,6 +93,17 @@ struct bf_contacts {
   struct bf_contact_info *contact_list_head;
 };
 
+struct bf_permission_info {
+  int has_contact;
+  int user_id;
+  struct bf_permission_info *next;
+};
+
+struct bf_permissions {
+  int num_permissions;
+  struct bf_permission_info *permission_list_head;
+};
+
 struct bf_battery_level_struct {
   int level_value_no_BT;
   int level_value_with_BT;

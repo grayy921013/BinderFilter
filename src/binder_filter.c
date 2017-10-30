@@ -49,10 +49,12 @@ static void copy_file_to_file(char* filename_src, char* filename_dst);
 //static struct bf_battery_level_struct battery_level;
 static struct bf_filters all_filters = {0, NULL};
 static struct bf_contacts all_contacts = {0, NULL};
+static struct bf_permissions all_permissions = {0, NULL};
 static struct bf_context_values_struct context_values = {0,0,{0},{0}, 0};
 
 static int read_persistent_policy_successful = READ_FAIL;
 static int read_contact_successful = READ_FAIL;
+static int read_permission_successful = READ_FAIL;
 
 static struct dentry *bf_debugfs_dir_entry_root;
 
@@ -208,25 +210,30 @@ static char* bf_realloc(char* oldp, int new_size)
 static char* read_file(char *filename, int* success)
 {
   int fd;
-  char buf[1];
-  int result_len = LARGE_BUFFER_SIZE;
-  int leeway = 8;
-  char* result = (char*) kzalloc(result_len, GFP_KERNEL);
+  char buf[SMALL_BUFFER_SIZE];
+  int capacity = LARGE_BUFFER_SIZE;
+  int size = 0;
+	int read_len = 0;
+  char* result = (char*) kzalloc(capacity, GFP_KERNEL);
   mm_segment_t old_fs = get_fs();
 
-  strncpy(result, "\0", 1);
   set_fs(KERNEL_DS);
 
   fd = sys_open(filename, O_RDONLY, 0);
   if (fd >= 0) {
-    while (sys_read(fd, buf, 1) == 1) {
-      if (strlen(result) > result_len - leeway) {
-      	result = bf_realloc(result, result_len * 2);
+    while (1) {
+			read_len = sys_read(fd, buf, SMALL_BUFFER_SIZE);
+			if (read_len <= 0) break;
+      if (size + read_len >= capacity) {
+				capacity *= 2;
+      	result = bf_realloc(result, capacity);
       }
 
-      strncat(result, buf, 1);
+      memcpy(result + size, buf, read_len);
+			size += read_len;
     }
     sys_close(fd);
+		result[size] = '\0';
     *success = READ_SUCCESS;
   } else {
   	//printk(KERN_INFO "BINDERFILTER: read fd: %d\n", fd);
@@ -1290,6 +1297,32 @@ static int index_of(char* str, char c, int start)
 	return -1;
 }
 
+int index_of_string(char *str, char *pattern, int start, int end)
+{
+  int str_len;
+  int pattern_len;
+  int i;
+  int j;
+  if (str == NULL || pattern == NULL) {
+    return -1;
+  }
+  str_len = strlen(str);
+  pattern_len = strlen(pattern);
+  if (start < 0) {
+    return -1;
+  }
+  if (end == -1 || end > str_len) {
+    end = str_len;
+  }
+  for (i = start; i < end - pattern_len; i++) {
+    for (j = 0; j < pattern_len; j++) {
+      if (str[i+j] != pattern[j]) break;
+    }
+    if (j == pattern_len) return i;
+  }
+  return -1;
+}
+
 // message:uid:action_code:context:(context_type:context_val:)(data:)
 static int parse_policy_context(char* policy, int starting_index, struct bf_user_filter* filter)
 {
@@ -1647,6 +1680,106 @@ static void parse_contact(char* contact)
 
 }
 
+static int get_user_id(char* str, int start, int end) {
+	int id_start = index_of_string(str, "userId=\"", start, end);
+	int id_end;
+	int id_len;
+	long res = -1;
+	char *id_str;
+	if (id_start > 0) {
+		id_start += 8;
+		id_end =  index_of_string(str, "\"", id_start, end);
+		id_len = id_end - id_start;
+		id_str = (char*) kzalloc(id_len + 1, GFP_KERNEL);
+		strncpy(id_str, (str + id_start), id_len);
+		id_str[id_len+1] = '\0';
+
+		if (kstrtol(id_str, 10, &res) != 0) {
+			printk(KERN_INFO "BINDERFILTER: could not parse user id! {%s}\n", id_str);
+			res = -1;
+		}
+		kfree(id_str);
+		return (int)res;
+	}
+  id_start = index_of_string(str, "sharedUserId=\"", start, end);
+  if (id_start > 0) {
+    id_start += 14;
+		id_end =  index_of_string(str, "\"", id_start, end);
+		id_len = id_end - id_start;
+		id_str = (char*) kzalloc(id_len + 1, GFP_KERNEL);
+		strncpy(id_str, (str + id_start), id_len);
+		id_str[id_len+1] = '\0';
+
+		if (kstrtol(id_str, 10, &res) != 0) {
+			printk(KERN_INFO "BINDERFILTER: could not parse shared user id! {%s}\n", id_str);
+			res = -1;
+		}
+    kfree(id_str);
+  }
+	return (int)res;
+}
+
+static void update_permission(int user_id, int has_contact)
+{
+	struct bf_permission_info* permission_info = all_permissions.permission_list_head;
+	printk(KERN_INFO "BINDERFILTER: permission id:%d has_contact:%d\n", user_id, has_contact);
+	while (permission_info != NULL) {
+		if (permission_info->user_id == user_id) break;
+		permission_info = permission_info->next;
+	}
+	if (permission_info != NULL) {
+		permission_info->has_contact = permission_info->has_contact || has_contact;
+		return;
+	}
+	permission_info =
+		(struct bf_permission_info*) kzalloc(sizeof(struct bf_permission_info), GFP_KERNEL);
+	permission_info->user_id = user_id;
+	permission_info->has_contact = has_contact;
+	all_permissions.num_permissions += 1;
+	permission_info->next = all_permissions.permission_list_head;
+	all_permissions.permission_list_head = permission_info;
+}
+
+
+static void parse_permission(char* permission)
+{
+	int index = 0;
+  int start_index;
+  int end_index;
+  int has_contact;
+	int user_id;
+
+  while (index != -1) {
+    start_index = index_of_string(permission, "<package name", index, -1);
+		if (start_index == -1) break;
+    end_index = index_of_string(permission, "</package>", start_index, -1);
+		if (end_index == -1) break;
+		printk(KERN_INFO "BINDERFILTER: package %d %d\n", start_index, end_index);
+    has_contact = index_of_string(permission, "READ_CONTACTS", start_index, end_index);
+    if (has_contact >= 0) has_contact = 1;
+		else has_contact = 0;
+    index = end_index;
+		user_id = get_user_id(permission, start_index, end_index - 1);
+		update_permission(user_id, has_contact);
+  }
+  index = 0;
+  while (index != -1) {
+    start_index = index_of_string(permission, "<updated-package ", index, -1);
+		if (start_index == -1) break;
+    end_index = index_of_string(permission, "</updated-package>", start_index, -1);
+		if (end_index == -1) break;
+		printk(KERN_INFO "BINDERFILTER: updated-package %d %d\n", start_index, end_index);
+    has_contact = index_of_string(permission, "READ_CONTACTS", start_index, end_index);
+		if (has_contact >= 0) has_contact = 1;
+		else has_contact = 0;
+    index = end_index;
+		user_id = get_user_id(permission, start_index, end_index - 1);
+		update_permission(user_id, has_contact);
+  }
+
+
+}
+
 static void read_contact(void)
 {
 	int success = READ_FAIL;
@@ -1660,6 +1793,22 @@ static void read_contact(void)
 	}
 
 	kfree(contact);
+}
+
+static void read_permission(void)
+{
+	int success = READ_FAIL;
+	char* permission;
+
+	printk(KERN_INFO "BINDERFILTER: read permission\n");
+	permission = read_file("/data/system/packages.xml", &success);
+	read_permission_successful = success;
+
+	if (success == READ_SUCCESS) {
+		parse_permission(permission);
+	}
+
+	kfree(permission);
 }
 
 // ENTRY POINT FROM binder.c
@@ -1680,6 +1829,9 @@ int filter_binder_message(unsigned long addr, signed long size, int reply, int e
 	}
 	if (read_contact_successful != READ_SUCCESS) {
 		read_contact();
+	}
+	if (read_permission_successful != READ_SUCCESS) {
+		read_permission();
 	}
 
 	if (binder_filter_print_buffer_contents == 1) {
