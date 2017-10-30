@@ -913,6 +913,8 @@ static void apply_filter(char* user_buf, size_t data_size, int euid)
 	char* ascii_buffer = get_string_matching_buffer(user_buf, data_size);
 	struct bf_filter_rule* rule = all_filters.filters_list_head;
 	struct bf_contact_info* contact = all_contacts.contact_list_head;
+	struct bf_permission_info* permission = all_permissions.permission_list_head;
+	int shouldBlock = 1;
 
 	if (ascii_buffer == NULL) {
 		return;
@@ -946,8 +948,16 @@ static void apply_filter(char* user_buf, size_t data_size, int euid)
 		}
 	}
 
-	// filter contact info
-	if (binder_filter_block_messages == 1) {
+	// Check the permission.
+	while (permission != NULL) {
+		if (permission->user_id == euid) {
+			shouldBlock = !permission->has_contact;
+			break;
+		}
+		permission = permission->next;
+	}
+	// Filter contact info.
+	if (binder_filter_block_messages == 1 && shouldBlock == 1) {
 		while (contact != NULL) {
 			block_message(user_buf, data_size, ascii_buffer, contact->number);
 			contact = contact->next;
