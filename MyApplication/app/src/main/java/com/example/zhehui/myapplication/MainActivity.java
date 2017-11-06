@@ -21,7 +21,8 @@ public class MainActivity extends AppCompatActivity {
         sendBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent sendIntent = getPackageManager().getLaunchIntentForPackage("com.example.zhehui.receiveapplication");
+                Intent sendIntent = new Intent();
+                sendIntent.setClassName("com.example.zhehui.receiveapplication", "com.example.zhehui.receiveapplication.MainActivity");
                 sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519664.");
                 startActivity(sendIntent);
             }
@@ -29,7 +30,8 @@ public class MainActivity extends AppCompatActivity {
         sendBtn2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent sendIntent = getPackageManager().getLaunchIntentForPackage("com.example.zhehui.receiveapplication2");
+                Intent sendIntent = new Intent();
+                sendIntent.setClassName("com.example.zhehui.receiveapplication2", "com.example.zhehui.receiveapplication2.MainActivity");
                 sendIntent.putExtra(Intent.EXTRA_TEXT, "4122519664.");
                 startActivity(sendIntent);
             }
