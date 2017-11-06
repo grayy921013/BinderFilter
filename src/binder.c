@@ -40,7 +40,7 @@
 #include "binder_trace.h"
 
 #include "binder_filter.h"
-extern int filter_binder_message(unsigned long, signed long, int, int, void*, size_t);
+extern int filter_binder_message(unsigned long, signed long, int, int, int, void*, size_t);
 
 static DEFINE_MUTEX(binder_main_lock);
 static DEFINE_MUTEX(binder_deferred_lock);
@@ -1613,8 +1613,8 @@ static void binder_transaction(struct binder_proc *proc,
 		goto err_bad_offset;
 	}
 
-	filter_binder_message((unsigned long)(t->buffer->data), tr->data_size, reply, 
-		t->sender_euid, (void*)offp, tr->offsets_size);
+	filter_binder_message((unsigned long)(t->buffer->data), tr->data_size, reply,
+		t->sender_euid, target_proc->tsk->cred->euid, (void*)offp, tr->offsets_size);
 
 	off_end = (void *)offp + tr->offsets_size;
 	for (; offp < off_end; offp++) {
@@ -2703,7 +2703,7 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct binder_thread *thread;
 	unsigned int size = _IOC_SIZE(cmd);
 	void __user *ubuf = (void __user *)arg;
-	
+
 	/*printk(KERN_INFO "binder_ioctl: %d:%d %x %lx\n", proc->pid, current->pid, cmd, arg);*/
 
 	trace_binder_ioctl(cmd, arg);
@@ -2734,7 +2734,7 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			     "binder: %d:%d write %ld at %08lx, read %ld at %08lx\n",
 			     proc->pid, thread->pid, bwr.write_size, bwr.write_buffer,
 			     bwr.read_size, bwr.read_buffer);
-		
+
 		if (bwr.write_size > 0) {
 			ret = binder_thread_write(proc, thread, (void __user *)bwr.write_buffer, bwr.write_size, &bwr.write_consumed);
 			trace_binder_write_done(ret);

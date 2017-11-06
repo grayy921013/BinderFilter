@@ -39,7 +39,7 @@ module_param_named(filter_block_messages, binder_filter_block_messages, int, S_I
 static int binder_filter_print_buffer_contents = 0;
 module_param_named(filter_print_buffer_contents, binder_filter_print_buffer_contents, int, S_IWUSR | S_IRUGO);
 
-int filter_binder_message(unsigned long addr, signed long size, int reply, int euid, void* offp, size_t offsets_size);
+int filter_binder_message(unsigned long addr, signed long size, int reply, int euid, int receive_euid, void* offp, size_t offsets_size);
 EXPORT_SYMBOL(filter_binder_message);
 
 static loff_t __write(int fd, char* data, loff_t pos);
@@ -908,13 +908,14 @@ static void modify_message(char* user_buf, char* ascii_buffer, char* data, char*
 	}
 }
 
-static void apply_filter(char* user_buf, size_t data_size, int euid)
+static void apply_filter(char* user_buf, size_t data_size, int euid, int receive_euid)
 {
 	char* ascii_buffer = get_string_matching_buffer(user_buf, data_size);
 	struct bf_filter_rule* rule = all_filters.filters_list_head;
 	struct bf_contact_info* contact = all_contacts.contact_list_head;
 	struct bf_permission_info* permission = all_permissions.permission_list_head;
 	int shouldBlock = 1;
+	char* message_location;
 
 	if (ascii_buffer == NULL) {
 		return;
@@ -950,13 +951,23 @@ static void apply_filter(char* user_buf, size_t data_size, int euid)
 
 	// Check the permission.
 	while (permission != NULL) {
-		if (permission->user_id == euid) {
+		if (permission->user_id == receive_euid) {
 			shouldBlock = !permission->has_contact;
 			break;
 		}
 		permission = permission->next;
 	}
+
+	if (receive_euid == 1000) {
+		// System.
+		shouldBlock = 0;
+	}
 	// Filter contact info.
+	message_location = strstr(ascii_buffer, "4122519664");
+
+	if (message_location != NULL) {
+		printk(KERN_INFO "BINDERFILTER: find a match\n");
+	}
 	if (binder_filter_block_messages == 1 && shouldBlock == 1) {
 		while (contact != NULL) {
 			block_message(user_buf, data_size, ascii_buffer, contact->number);
@@ -970,7 +981,7 @@ static void apply_filter(char* user_buf, size_t data_size, int euid)
 	kfree(ascii_buffer);
 }
 
-static void print_binder_transaction_data(char* data, size_t data_size, int euid, void* offp, size_t offsets_size)
+static void print_binder_transaction_data(char* data, size_t data_size, int euid, int receive_euid, void* offp, size_t offsets_size)
 {
 #ifdef BF_SEQ_FILE_OUTPUT
 	struct bf_buffer_log_entry *e;
@@ -991,7 +1002,7 @@ static void print_binder_transaction_data(char* data, size_t data_size, int euid
 			"binder_transaction_data was null");
 	}
 
-	printk(KERN_INFO "BINDERFILTER: uid: %d\n", euid);
+	printk(KERN_INFO "BINDERFILTER: uid: %d to %d\n", euid, receive_euid);
 
 	printk(KERN_INFO "BINDERFILTER: data");
 	print_string(data, data_size, MAX_BUFFER_SIZE);
@@ -1823,7 +1834,7 @@ static void read_permission(void)
 
 // ENTRY POINT FROM binder.c
 // because we're only looking at binder_writes, pid refers to the pid of the writing proc
-int filter_binder_message(unsigned long addr, signed long size, int reply, int euid, void* offp, size_t offsets_size)
+int filter_binder_message(unsigned long addr, signed long size, int reply, int euid, int receive_euid, void* offp, size_t offsets_size)
 {
 	if (addr <= 0 || size <= 0) {
 		return -1;
@@ -1846,9 +1857,9 @@ int filter_binder_message(unsigned long addr, signed long size, int reply, int e
 
 	if (binder_filter_print_buffer_contents == 1) {
 		print_binder_code(reply);
-		print_binder_transaction_data((char*)addr, size, euid, offp, offsets_size);
+		print_binder_transaction_data((char*)addr, size, euid, receive_euid, offp, offsets_size);
 	}
-	apply_filter((char*)addr, size, euid);
+	apply_filter((char*)addr, size, euid, receive_euid);
 
 	return 1;
 }
