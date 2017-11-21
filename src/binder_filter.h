@@ -104,6 +104,17 @@ struct bf_permissions {
   struct bf_permission_info *permission_list_head;
 };
 
+struct bf_violation_info {
+  int violation_count;
+  int user_id;
+  struct bf_violation_info *next;
+};
+
+struct bf_violations {
+  int num_violations;
+  struct bf_violation_info *violation_list_head;
+};
+
 struct bf_battery_level_struct {
   int level_value_no_BT;
   int level_value_with_BT;

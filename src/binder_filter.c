@@ -50,6 +50,7 @@ static void copy_file_to_file(char* filename_src, char* filename_dst);
 static struct bf_filters all_filters = {0, NULL};
 static struct bf_contacts all_contacts = {0, NULL};
 static struct bf_permissions all_permissions = {0, NULL};
+static struct bf_violations all_violations = {0, NULL};
 static struct bf_context_values_struct context_values = {0,0,{0},{0}, 0};
 
 static int read_persistent_policy_successful = READ_FAIL;
@@ -279,6 +280,39 @@ static void write_file(char *filename, char *data)
   set_fs(old_fs);
 }
 
+static void mkdir(char *filename)
+{
+  int fd;
+  mm_segment_t old_fs = get_fs();
+
+  set_fs(KERNEL_DS);
+  fd = sys_open(filename, O_DIRECTORY|O_CREAT, 0644);
+
+  if (fd >= 0) {
+    sys_close(fd);
+  } else {
+  	printk(KERN_INFO "BINDERFILTER: mkdir failure: %d\n", fd);
+  }
+  set_fs(old_fs);
+}
+
+static void append_file(char *filename, char *data)
+{
+  int fd;
+  mm_segment_t old_fs = get_fs();
+  loff_t pos = 0;
+
+  set_fs(KERNEL_DS);
+  fd = sys_open(filename, O_WRONLY|O_CREAT|O_APPEND, 0644);
+
+  if (fd >= 0) {
+    __write(fd, data, pos);
+  } else {
+  	printk(KERN_INFO "BINDERFILTER: append fd: %d\n", fd);
+  }
+  set_fs(old_fs);
+}
+
 static void copy_file_to_file(char* filename_src, char* filename_dst)
 {
 	int fd_read;
@@ -401,6 +435,73 @@ static void print_string(const char* buf, size_t data_size, int max_buffer_size)
 	kfree(buffer);
 
 	return;
+}
+
+static void update_violation(int user_id, char *ascii_buffer, int count)
+{
+	struct bf_violation_info* violation_info = all_violations.violation_list_head;
+	char filename[SMALL_BUFFER_SIZE];
+	char id[BUFFER_LOG_SIZE];
+
+	while (violation_info != NULL) {
+		if (violation_info->user_id == user_id) break;
+		violation_info = violation_info->next;
+	}
+	if (violation_info != NULL) {
+		violation_info->violation_count += count;
+	} else {
+		violation_info =
+			(struct bf_violation_info*) kzalloc(sizeof(struct bf_violation_info), GFP_KERNEL);
+		violation_info->user_id = user_id;
+		violation_info->violation_count = count;
+		all_violations.num_violations += 1;
+		violation_info->next = all_violations.violation_list_head;
+		all_violations.violation_list_head = violation_info;
+	}
+	printk(KERN_INFO "BINDERFILTER: id: %d violation count: %d\n", user_id, violation_info->violation_count);
+
+	mkdir("/data/local/tmp/logs/");
+	strcpy(filename, "/data/local/tmp/logs/");
+	sprintf(id, "%d", user_id);
+	strcat(filename, id);
+	printk(KERN_INFO "BINDERFILTER: filename: %s\n", filename);
+
+	append_file(filename, ascii_buffer);
+	append_file(filename, "\n");
+}
+
+static int count_phone_numbers(char* ascii_buffer)
+{
+	int now = 0;
+	int count = 0;
+	int offset = 0;
+	char number[SMALL_BUFFER_SIZE];
+	char c;
+
+	while (1) {
+		c = *ascii_buffer;
+		if (c >= 48 && c <= 57) {
+			number[offset++] = c;
+			now++;
+		} else {
+			// number ends
+			if (now == 10) {
+				count++;
+				number[offset] = '\0';
+				printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
+			}
+			now = 0;
+			offset = 0;
+		}
+		if (c == 0) break;
+		ascii_buffer++;
+	}
+	if (now == 10) {
+		count++;
+		number[offset] = '\0';
+		printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
+	}
+	return count;
 }
 
 /*
@@ -912,10 +1013,10 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 {
 	char* ascii_buffer = get_string_matching_buffer(user_buf, data_size);
 	struct bf_filter_rule* rule = all_filters.filters_list_head;
-	struct bf_contact_info* contact = all_contacts.contact_list_head;
+	// struct bf_contact_info* contact = all_contacts.contact_list_head;
 	struct bf_permission_info* permission = all_permissions.permission_list_head;
 	int shouldBlock = 1;
-	char* message_location;
+	int count;
 
 	if (ascii_buffer == NULL) {
 		return;
@@ -962,16 +1063,13 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 		// System.
 		shouldBlock = 0;
 	}
-	// Filter contact info.
-	message_location = strstr(ascii_buffer, "4122519664");
 
-	if (message_location != NULL) {
-		printk(KERN_INFO "BINDERFILTER: find a match\n");
-	}
 	if (binder_filter_block_messages == 1 && shouldBlock == 1) {
-		while (contact != NULL) {
-			block_message(user_buf, data_size, ascii_buffer, contact->number);
-			contact = contact->next;
+		count = count_phone_numbers(ascii_buffer);
+		if (count > 0) {
+			printk(KERN_INFO "BINDERFILTER: phone number count: %d\n%s\n", count, ascii_buffer);
+			memset(user_buf, 0, data_size);
+			update_violation(receive_euid, ascii_buffer, count);
 		}
 	}
 
