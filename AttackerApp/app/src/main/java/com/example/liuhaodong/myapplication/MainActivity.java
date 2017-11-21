@@ -91,7 +91,7 @@ public class MainActivity extends AppCompatActivity implements MainTarget{
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if(requestCode == Const.request_code){
+        if(requestCode == Const.request_code && data != null){
             String title = data.getStringExtra(Intent.EXTRA_TITLE);
             if(title != null && !title.equals("")){
                 Log.e("onActivityResult","case_title: "+title);
