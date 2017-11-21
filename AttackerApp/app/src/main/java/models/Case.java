@@ -1,4 +1,4 @@
-package com.example.liuhaodong.myapplication;
+package models;
 
 //import com.google.auto.value.AutoValue;
 
@@ -22,7 +22,7 @@ import java.util.Objects;
 //    public abstract String resp();
 //}
 
-abstract class Case{
+public abstract class Case{
 
     public abstract String name();
     public abstract String description();

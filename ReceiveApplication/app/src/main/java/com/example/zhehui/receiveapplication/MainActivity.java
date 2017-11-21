@@ -16,14 +16,10 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         textView = (TextView)findViewById(R.id.label);
         textView.setText(intent.getStringExtra(Intent.EXTRA_TEXT));
-
-//        if(title != null && !title.equals("")) {
-//            Intent sendIntent = new Intent();
-//            sendIntent.setClassName("com.example.liuhaodong.myapplication",
-//                    "com.example.liuhaodong.myapplication.MainActivity");
-//            sendIntent.putExtra(Intent.EXTRA_TITLE, title);
-//            Log.e("title",title);
-//            startActivity(sendIntent);
-//        }
+        String title = intent.getStringExtra(Intent.EXTRA_TITLE);
+        Intent ret = new Intent();
+        ret.putExtra(Intent.EXTRA_TITLE,title);
+        setResult(2,ret);
+        finish();
     }
 }

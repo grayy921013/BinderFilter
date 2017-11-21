@@ -2,7 +2,6 @@ package com.example.liuhaodong.myapplication;
 
 import android.graphics.Color;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,6 +17,7 @@ import javax.inject.Inject;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
+import models.Case;
 
 /**
  * Created by liuhaodong1 on 11/17/17.
@@ -73,8 +73,11 @@ public class CaseListviewAdapter extends RecyclerView.Adapter<CaseListviewAdapte
         final Item item = items.get(position);
 
         if(item.isSuccess){
-            holder.topLayout.setBackgroundColor(Color.BLUE);
+            holder.topLayout.setBackgroundColor(Color.GREEN);
+        }else {
+            holder.topLayout.setBackgroundColor(Color.WHITE);
         }
+        holder.select.setChecked(item.isSelected);
 
         holder.topLayout.setOnClickListener(new View.OnClickListener() {
 
@@ -98,9 +101,9 @@ public class CaseListviewAdapter extends RecyclerView.Adapter<CaseListviewAdapte
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 item.isSelected = isChecked;
+//                unSelectOthers(item);
             }
         });
-
     }
     @Override
     public int getItemCount() {
@@ -116,11 +119,36 @@ public class CaseListviewAdapter extends RecyclerView.Adapter<CaseListviewAdapte
         return ret;
     }
 
+    public List<Case> getAllCases(){
+        List<Case> ret = new ArrayList<>();
+        for(Item item : items){
+            ret.add(item.aCase);
+        }
+        return ret;
+    }
+
     public void updateReceivedState(String title){
         for(Item item : items){
             if(item.aCase.name().equals(title)){
                 item.isSuccess = true;
             }
         }
+        notifyDataSetChanged();
+    }
+
+    private void unSelectOthers(Item item){
+        for(Item i : items){
+            if(i != item){
+                i.isSelected = false;
+            }
+        }
+    }
+
+    public void resetReceivedState(){
+        for(Item item : items){
+            item.isSuccess = false;
+            item.isSelected = false;
+        }
+        notifyDataSetChanged();
     }
 }
