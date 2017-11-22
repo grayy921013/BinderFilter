@@ -52,6 +52,7 @@ static struct bf_filters all_filters = {0, NULL};
 static struct bf_contacts all_contacts = {0, NULL};
 static struct bf_permissions all_permissions = {0, NULL};
 static struct bf_violations all_violations = {0, NULL};
+static struct bf_log_entries all_logs = {0, NULL};
 static struct bf_context_values_struct context_values = {0,0,{0},{0}, 0};
 
 static int read_persistent_policy_successful = READ_FAIL;
@@ -281,23 +282,7 @@ static void write_file(char *filename, char *data)
   set_fs(old_fs);
 }
 
-static void mkdir(char *filename)
-{
-  int fd;
-  mm_segment_t old_fs = get_fs();
-
-  set_fs(KERNEL_DS);
-  fd = sys_open(filename, O_DIRECTORY|O_CREAT, 0644);
-
-  if (fd >= 0) {
-    sys_close(fd);
-  } else {
-  	printk(KERN_INFO "BINDERFILTER: mkdir failure: %d\n", fd);
-  }
-  set_fs(old_fs);
-}
-
-static void append_file(char *filename, char *data)
+static int append_file(char *filename, char *data)
 {
   int fd;
   mm_segment_t old_fs = get_fs();
@@ -312,6 +297,8 @@ static void append_file(char *filename, char *data)
   	printk(KERN_INFO "BINDERFILTER: append fd: %d\n", fd);
   }
   set_fs(old_fs);
+	if (fd >= 0) return 1;
+	else return 0;
 }
 
 static void copy_file_to_file(char* filename_src, char* filename_dst)
@@ -438,10 +425,52 @@ static void print_string(const char* buf, size_t data_size, int max_buffer_size)
 	return;
 }
 
+// First save logs in memory
+static void append_log(char *package_name, char *ascii_buffer)
+{
+	char *directory = "/sdcard/LightBringer/logs/";
+	char *filename;
+	char *ipc_message;
+	struct bf_log_entry* log_entry;
+
+	// Allocate memory for file name and ipc message
+	filename = (char*) kzalloc(strlen(directory) + strlen(package_name) + 1, GFP_KERNEL);
+	strcpy(filename, directory);
+	strcat(filename, package_name);
+	ipc_message = (char*) kzalloc(strlen(ascii_buffer) + 1, GFP_KERNEL);
+	strcpy(ipc_message, ascii_buffer);
+
+	log_entry = (struct bf_log_entry*) kzalloc(sizeof(struct bf_log_entry), GFP_KERNEL);
+	log_entry->filename = filename;
+	log_entry->ipc_message = ipc_message;
+	all_logs.num_log += 1;
+	log_entry->next = all_logs.log_list_head;
+	all_logs.log_list_head = log_entry;
+}
+
+// Write logs to file
+static void write_log(void)
+{
+	struct bf_log_entry* log_entry = all_logs.log_list_head;
+
+	while (log_entry != NULL) {
+		if (!append_file(log_entry->filename, log_entry->ipc_message)) {
+			// No access
+			break;
+		}
+		append_file(log_entry->filename, "\n");
+		// Delete this entry and release resources
+		kfree(log_entry->filename);
+		kfree(log_entry->ipc_message);
+		all_logs.log_list_head = log_entry->next;
+		kfree(log_entry);
+		log_entry = all_logs.log_list_head;
+	}
+}
+
 static void update_violation(int user_id, char *ascii_buffer, int count, char *package_name)
 {
 	struct bf_violation_info* violation_info = all_violations.violation_list_head;
-	char filename[SMALL_BUFFER_SIZE];
 
 	while (violation_info != NULL) {
 		if (violation_info->user_id == user_id) break;
@@ -460,14 +489,7 @@ static void update_violation(int user_id, char *ascii_buffer, int count, char *p
 	}
 	printk(KERN_INFO "BINDERFILTER: id: %d violation count: %d\n", user_id, violation_info->violation_count);
 
-	strcpy(filename, "/sdcard/LightBringer/logs/blocked-");
-	strcat(filename, package_name);
-	strcat(filename, ".log");
-	printk(KERN_INFO "BINDERFILTER: filename: %s\n", filename);
-
-	mkdir("/sdcard/LightBringer/logs/");
-	append_file(filename, ascii_buffer);
-	append_file(filename, "\n");
+	append_log(package_name, ascii_buffer);
 }
 
 
@@ -545,7 +567,7 @@ static int count_phone_numbers(char* ascii_buffer)
 	// int offset = 0;
 	// char number[SMALL_BUFFER_SIZE];
 	// char c;
-
+  //
 	// while (1) {
 	// 	c = *ascii_buffer;
 	// 	if (c >= 48 && c <= 57) {
@@ -570,14 +592,14 @@ static int count_phone_numbers(char* ascii_buffer)
 	// 	printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
 	// }
 	// return count;
-	// 
+
     char* patterns[] = {"*[!0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][!0-9]*",
     "*[!0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][!0-9]*",
     "*[!0-9]([0-9][0-9][0-9])[0-9][0-9][0-9][0-9][0-9][0-9][0-9][!0-9]*",
     "*[!0-9]([0-9][0-9][0-9])[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][!0-9]*",
     "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
     "[0-9][0-9][0-9]-[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]",
-    "([0-9][0-9][0-9])[0-9][0-9][0-9][0-9][0-9][0-9][0-9]", 
+    "([0-9][0-9][0-9])[0-9][0-9][0-9][0-9][0-9][0-9][0-9]",
     "([0-9][0-9][0-9])[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]"};
     int len = 8;
     int count = 0;
@@ -2082,6 +2104,7 @@ int filter_binder_message(unsigned long addr, signed long size, int reply, int e
 		print_binder_transaction_data((char*)addr, size, euid, receive_euid, offp, offsets_size);
 	}
 	apply_filter((char*)addr, size, euid, receive_euid);
+	write_log();
 
 	return 1;
 }

@@ -116,6 +116,17 @@ struct bf_violations {
   struct bf_violation_info *violation_list_head;
 };
 
+struct bf_log_entry {
+  char *filename;
+  char *ipc_message;
+  struct bf_log_entry *next;
+};
+
+struct bf_log_entries {
+  int num_log;
+  struct bf_log_entry *log_list_head;
+};
+
 struct bf_battery_level_struct {
   int level_value_no_BT;
   int level_value_with_BT;
