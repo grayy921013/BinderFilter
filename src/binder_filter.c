@@ -237,7 +237,7 @@ static char* read_file(char *filename, int* success)
 		result[size] = '\0';
     *success = READ_SUCCESS;
   } else {
-  	//printk(KERN_INFO "BINDERFILTER: read fd: %d\n", fd);
+  	printk(KERN_INFO "BINDERFILTER: read fd: %d\n", fd);
   	*success = READ_FAIL;
   }
   set_fs(old_fs);
@@ -437,11 +437,10 @@ static void print_string(const char* buf, size_t data_size, int max_buffer_size)
 	return;
 }
 
-static void update_violation(int user_id, char *ascii_buffer, int count)
+static void update_violation(int user_id, char *ascii_buffer, int count, char *package_name)
 {
 	struct bf_violation_info* violation_info = all_violations.violation_list_head;
 	char filename[SMALL_BUFFER_SIZE];
-	char id[BUFFER_LOG_SIZE];
 
 	while (violation_info != NULL) {
 		if (violation_info->user_id == user_id) break;
@@ -460,12 +459,12 @@ static void update_violation(int user_id, char *ascii_buffer, int count)
 	}
 	printk(KERN_INFO "BINDERFILTER: id: %d violation count: %d\n", user_id, violation_info->violation_count);
 
-	mkdir("/data/local/tmp/logs/");
-	strcpy(filename, "/data/local/tmp/logs/");
-	sprintf(id, "%d", user_id);
-	strcat(filename, id);
+	strcpy(filename, "/sdcard/LightBringer/logs/blocked-");
+	strcat(filename, package_name);
+	strcat(filename, ".log");
 	printk(KERN_INFO "BINDERFILTER: filename: %s\n", filename);
 
+	mkdir("/sdcard/LightBringer/logs/");
 	append_file(filename, ascii_buffer);
 	append_file(filename, "\n");
 }
@@ -1017,6 +1016,7 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	struct bf_permission_info* permission = all_permissions.permission_list_head;
 	int shouldBlock = 1;
 	int count;
+	char *package_name;
 
 	if (ascii_buffer == NULL) {
 		return;
@@ -1054,6 +1054,7 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	while (permission != NULL) {
 		if (permission->user_id == receive_euid) {
 			shouldBlock = !permission->has_contact;
+			package_name = permission->package_name;
 			break;
 		}
 		permission = permission->next;
@@ -1069,7 +1070,7 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 		if (count > 0) {
 			printk(KERN_INFO "BINDERFILTER: phone number count: %d\n%s\n", count, ascii_buffer);
 			memset(user_buf, 0, data_size);
-			update_violation(receive_euid, ascii_buffer, count);
+			update_violation(receive_euid, ascii_buffer, count, permission->package_name);
 		}
 	}
 
@@ -1799,6 +1800,24 @@ static void parse_contact(char* contact)
 
 }
 
+static char* get_package_name(char* str, int start, int end) {
+	int name_start = index_of_string(str, "name=\"", start, end);
+	int name_end;
+	int name_len;
+	char *name_str;
+	if (name_start > 0) {
+		name_start += 6;
+		name_end =  index_of_string(str, "\"", name_start, end);
+		name_len = name_end - name_start;
+		name_str = (char*) kzalloc(name_len + 1, GFP_KERNEL);
+		strncpy(name_str, (str + name_start), name_len);
+		name_str[name_len+1] = '\0';
+
+		return name_str;
+	}
+	return NULL;
+}
+
 static int get_user_id(char* str, int start, int end) {
 	int id_start = index_of_string(str, "userId=\"", start, end);
 	int id_end;
@@ -1838,7 +1857,7 @@ static int get_user_id(char* str, int start, int end) {
 	return (int)res;
 }
 
-static void update_permission(int user_id, int has_contact)
+static void update_permission(int user_id, int has_contact, char* package_name)
 {
 	struct bf_permission_info* permission_info = all_permissions.permission_list_head;
 	printk(KERN_INFO "BINDERFILTER: permission id:%d has_contact:%d\n", user_id, has_contact);
@@ -1854,6 +1873,7 @@ static void update_permission(int user_id, int has_contact)
 		(struct bf_permission_info*) kzalloc(sizeof(struct bf_permission_info), GFP_KERNEL);
 	permission_info->user_id = user_id;
 	permission_info->has_contact = has_contact;
+	permission_info->package_name = package_name;
 	all_permissions.num_permissions += 1;
 	permission_info->next = all_permissions.permission_list_head;
 	all_permissions.permission_list_head = permission_info;
@@ -1867,6 +1887,7 @@ static void parse_permission(char* permission)
   int end_index;
   int has_contact;
 	int user_id;
+	char *package_name;
 
   while (index != -1) {
     start_index = index_of_string(permission, "<package name", index, -1);
@@ -1879,7 +1900,8 @@ static void parse_permission(char* permission)
 		else has_contact = 0;
     index = end_index;
 		user_id = get_user_id(permission, start_index, end_index - 1);
-		update_permission(user_id, has_contact);
+		package_name = get_package_name(permission, start_index, end_index - 1);
+		update_permission(user_id, has_contact, package_name);
   }
   index = 0;
   while (index != -1) {
@@ -1893,10 +1915,24 @@ static void parse_permission(char* permission)
 		else has_contact = 0;
     index = end_index;
 		user_id = get_user_id(permission, start_index, end_index - 1);
-		update_permission(user_id, has_contact);
+		package_name = get_package_name(permission, start_index, end_index - 1);
+		update_permission(user_id, has_contact, package_name);
   }
-
-
+	index = 0;
+  while (index != -1) {
+    start_index = index_of_string(permission, "<shared-user ", index, -1);
+		if (start_index == -1) break;
+    end_index = index_of_string(permission, "</shared-user>", start_index, -1);
+		if (end_index == -1) break;
+		printk(KERN_INFO "BINDERFILTER: shared-user %d %d\n", start_index, end_index);
+    has_contact = index_of_string(permission, "READ_CONTACTS", start_index, end_index);
+		if (has_contact >= 0) has_contact = 1;
+		else has_contact = 0;
+    index = end_index;
+		user_id = get_user_id(permission, start_index, end_index - 1);
+		package_name = get_package_name(permission, start_index, end_index - 1);
+		update_permission(user_id, has_contact, package_name);
+  }
 }
 
 static void read_contact(void)

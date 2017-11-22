@@ -96,6 +96,7 @@ struct bf_contacts {
 struct bf_permission_info {
   int has_contact;
   int user_id;
+  char *package_name;
   struct bf_permission_info *next;
 };
 
