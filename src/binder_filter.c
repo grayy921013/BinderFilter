@@ -18,6 +18,7 @@
 #include <linux/syscalls.h>
 #include <linux/reboot.h>
 #include <linux/file.h>
+// #include "../../../kernel/trace/trace.h"
 
 #include "binder_filter.h"
 #include "binder.h"
@@ -469,36 +470,118 @@ static void update_violation(int user_id, char *ascii_buffer, int count, char *p
 	append_file(filename, "\n");
 }
 
+
+/**
+ *	glob_match - match a text string against a glob-style pattern
+ *	@text: the string to be examined
+ *	@pattern: the glob-style pattern to be matched against
+ *
+ *	Either/both of text and pattern can be empty strings.
+ *
+ *	Match text against a glob-style pattern, with wildcards and simple sets:
+ *
+ *		?	matches any single character.
+ *		*	matches any run of characters.
+ *		[xyz]	matches a single character from the set: x, y, or z.
+ *		[a-d]	matches a single character from the range: a, b, c, or d.
+ *		[a-d0-9] matches a single character from either range.
+ *
+ *	The special characters ?, [, -, or *, can be matched using a set, eg. [*]
+ *	Behaviour with malformed patterns is undefined, though generally reasonable.
+ *
+ *	Sample patterns:  "SD1?",  "SD1[0-5]",  "*R0",  "SD*1?[012]*xx"
+ *
+ *	This function uses one level of recursion per '*' in pattern.
+ *	Since it calls _nothing_ else, and has _no_ explicit local variables,
+ *	this will not cause stack problems for any reasonable use here.
+ *
+ *	RETURNS:
+ *	0 on match, 1 otherwise.
+ */
+static int glob_match (char *text, char *pattern)
+{
+	do {
+		/* Match single character or a '?' wildcard */
+		if (*text == *pattern || *pattern == '?') {
+			if (!*pattern++)
+				return 0;  /* End of both strings: match */
+		} else {
+			/* Match single char against a '[' bracketed ']' pattern set */
+			if (!*text || *pattern != '[')
+				break;  /* Not a pattern set */
+			while (*++pattern && *pattern != ']' && *text != *pattern) {
+				if (*pattern == '-' && *(pattern - 1) != '[')
+					if (*text > *(pattern - 1) && *text < *(pattern + 1)) {
+						++pattern;
+						break;
+					}
+			}
+			if (!*pattern || *pattern == ']')
+				return 1;  /* No match */
+			while (*pattern && *pattern++ != ']');
+		}
+	} while (*++text && *pattern);
+
+	/* Match any run of chars against a '*' wildcard */
+	if (*pattern == '*') {
+		if (!*++pattern)
+			return 0;  /* Match: avoid recursion at end of pattern */
+		/* Loop to handle additional pattern chars after the wildcard */
+		while (*text) {
+			if (glob_match(text, pattern) == 0)
+				return 0;  /* Remainder matched */
+			++text;  /* Absorb (match) this char and try again */
+		}
+	}
+	if (!*text && !*pattern)
+		return 0;  /* End of both strings: match */
+	return 1;  /* No match */
+}
+
 static int count_phone_numbers(char* ascii_buffer)
 {
-	int now = 0;
-	int count = 0;
-	int offset = 0;
-	char number[SMALL_BUFFER_SIZE];
-	char c;
+	// int now = 0;
+	// int count = 0;
+	// int offset = 0;
+	// char number[SMALL_BUFFER_SIZE];
+	// char c;
 
-	while (1) {
-		c = *ascii_buffer;
-		if (c >= 48 && c <= 57) {
-			number[offset++] = c;
-			now++;
-		} else {
-			// number ends
-			if (now == 10) {
-				count++;
-				number[offset] = '\0';
-				printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
-			}
-			now = 0;
-			offset = 0;
-		}
-		if (c == 0) break;
-		ascii_buffer++;
-	}
-	if (now == 10) {
-		count++;
-		number[offset] = '\0';
-		printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
+	// while (1) {
+	// 	c = *ascii_buffer;
+	// 	if (c >= 48 && c <= 57) {
+	// 		number[offset++] = c;
+	// 		now++;
+	// 	} else {
+	// 		// number ends
+	// 		if (now == 10) {
+	// 			count++;
+	// 			number[offset] = '\0';
+	// 			printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
+	// 		}
+	// 		now = 0;
+	// 		offset = 0;
+	// 	}
+	// 	if (c == 0) break;
+	// 	ascii_buffer++;
+	// }
+	// if (now == 10) {
+	// 	count++;
+	// 	number[offset] = '\0';
+	// 	printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
+	// }
+	// return count;
+	// 
+	char* patterns[] = {"*[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*",
+	"*[0-9][0-9][0-9]-[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]*",
+	"*([0-9][0-9][0-9])[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*", "*([0-9][0-9][0-9])[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]*" };
+	int len = 4;
+	int count = 0;
+	char* pattern;
+	int i;
+
+	for (i = 0; i < len; i++){
+		pattern = patterns[i];
+		if (glob_match(pattern, ascii_buffer)) count++;
 	}
 	return count;
 }
