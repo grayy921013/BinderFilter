@@ -1124,7 +1124,7 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	struct bf_filter_rule* rule = all_filters.filters_list_head;
 	// struct bf_contact_info* contact = all_contacts.contact_list_head;
 	struct bf_permission_info* permission = all_permissions.permission_list_head;
-	int shouldBlock = 1;
+	int shouldBlock = 0;
 	int count;
 	char *package_name;
 
