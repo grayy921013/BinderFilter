@@ -492,107 +492,120 @@ static void update_violation(int user_id, char *ascii_buffer, int count, char *p
 	append_log(package_name, ascii_buffer);
 }
 
-
 /**
- *	glob_match - match a text string against a glob-style pattern
- *	@text: the string to be examined
- *	@pattern: the glob-style pattern to be matched against
+ * glob_match - Shell-style pattern matching, like !fnmatch(pat, str, 0)
+ * @pat: Shell-style pattern to match, e.g. "*.[ch]".
+ * @str: String to match.  The pattern must match the entire string.
  *
- *	Either/both of text and pattern can be empty strings.
+ * Perform shell-style glob matching, returning true (1) if the match
+ * succeeds, or false (0) if it fails.  Equivalent to !fnmatch(@pat, @str, 0).
  *
- *	Match text against a glob-style pattern, with wildcards and simple sets:
+ * Pattern metacharacters are ?, *, [ and \.
+ * (And, inside character classes, !, - and ].)
  *
- *		?	matches any single character.
- *		*	matches any run of characters.
- *		[xyz]	matches a single character from the set: x, y, or z.
- *		[a-d]	matches a single character from the range: a, b, c, or d.
- *		[a-d0-9] matches a single character from either range.
+ * This is small and simple implementation intended for device blacklists
+ * where a string is matched against a number of patterns.  Thus, it
+ * does not preprocess the patterns.  It is non-recursive, and run-time
+ * is at most quadratic: strlen(@str)*strlen(@pat).
  *
- *	The special characters ?, [, -, or *, can be matched using a set, eg. [*]
- *	Behaviour with malformed patterns is undefined, though generally reasonable.
+ * An example of the worst case is glob_match("*aaaaa", "aaaaaaaaaa");
+ * it takes 6 passes over the pattern before matching the string.
  *
- *	Sample patterns:  "SD1?",  "SD1[0-5]",  "*R0",  "SD*1?[012]*xx"
+ * Like !fnmatch(@pat, @str, 0) and unlike the shell, this does NOT
+ * treat / or leading . specially; it isn't actually used for pathnames.
  *
- *	This function uses one level of recursion per '*' in pattern.
- *	Since it calls _nothing_ else, and has _no_ explicit local variables,
- *	this will not cause stack problems for any reasonable use here.
+ * Note that according to glob(7) (and unlike bash), character classes
+ * are complemented by a leading !; this does not support the regex-style
+ * [^a-z] syntax.
  *
- *	RETURNS:
- *	0 on match, 1 otherwise.
+ * An opening bracket without a matching close is matched literally.
  */
-static int glob_match (char *text, char *pattern)
+static int glob_match(char const *pat, char const *str)
 {
-	do {
-		/* Match single character or a '?' wildcard */
-		if (*text == *pattern || *pattern == '?') {
-			if (!*pattern++)
-				return 0;  /* End of both strings: match */
-		} else {
-			/* Match single char against a '[' bracketed ']' pattern set */
-			if (!*text || *pattern != '[')
-				break;  /* Not a pattern set */
-			while (*++pattern && *pattern != ']' && *text != *pattern) {
-				if (*pattern == '-' && *(pattern - 1) != '[')
-					if (*text > *(pattern - 1) && *text < *(pattern + 1)) {
-						++pattern;
-						break;
-					}
-			}
-			if (!*pattern || *pattern == ']')
-				return 1;  /* No match */
-			while (*pattern && *pattern++ != ']');
-		}
-	} while (*++text && *pattern);
+    /*
+     * Backtrack to previous * on mismatch and retry starting one
+     * character later in the string.  Because * matches all characters
+     * (no exception for /), it can be easily proved that there's
+     * never a need to backtrack multiple levels.
+     */
+    char const *back_pat = NULL, *back_str = back_str;
 
-	/* Match any run of chars against a '*' wildcard */
-	if (*pattern == '*') {
-		if (!*++pattern)
-			return 0;  /* Match: avoid recursion at end of pattern */
-		/* Loop to handle additional pattern chars after the wildcard */
-		while (*text) {
-			if (glob_match(text, pattern) == 0)
-				return 0;  /* Remainder matched */
-			++text;  /* Absorb (match) this char and try again */
-		}
-	}
-	if (!*text && !*pattern)
-		return 0;  /* End of both strings: match */
-	return 1;  /* No match */
+    /*
+     * Loop over each token (character or class) in pat, matching
+     * it against the remaining unmatched tail of str.  Return 0
+     * on mismatch, or 1 after matching the trailing nul bytes.
+     */
+    for (;;) {
+        unsigned char c = *str++;
+        unsigned char d = *pat++;
+
+        switch (d) {
+        case '?':   /* Wildcard: anything but nul */
+            if (c == '\0')
+                return 0;
+            break;
+        case '*':   /* Any-length wildcard */
+            if (*pat == '\0')   /* Optimize trailing * case */
+                return 1;
+            back_pat = pat;
+            back_str = --str;   /* Allow zero-length match */
+            break;
+        case '[': { /* Character class */
+            int match = 0, inverted = (*pat == '!');
+            char const *class = pat + inverted;
+            unsigned char a = *class++;
+
+            /*
+             * Iterate over each span in the character class.
+             * A span is either a single character a, or a
+             * range a-b.  The first span may begin with ']'.
+             */
+            do {
+                unsigned char b = a;
+
+                if (a == '\0')  /* Malformed */
+                    goto literal;
+
+                if (class[0] == '-' && class[1] != ']') {
+                    b = class[1];
+
+                    if (b == '\0')
+                        goto literal;
+
+                    class += 2;
+                    /* Any special action if a > b? */
+                }
+                match |= (a <= c && c <= b);
+            } while ((a = *class++) != ']');
+
+            if (match == inverted)
+                goto backtrack;
+            pat = class;
+            }
+            break;
+        case '\\':
+            d = *pat++;
+            /*FALLTHROUGH*/
+        default:    /* Literal character */
+literal:
+            if (c == d) {
+                if (d == '\0')
+                    return 1;
+                break;
+            }
+backtrack:
+            if (c == '\0' || !back_pat)
+                return 0;   /* No point continuing */
+            /* Try again from last *, one character later in str. */
+            pat = back_pat;
+            str = ++back_str;
+            break;
+        }
+    }
 }
 
 static int count_phone_numbers(char* ascii_buffer)
 {
-	// int now = 0;
-	// int count = 0;
-	// int offset = 0;
-	// char number[SMALL_BUFFER_SIZE];
-	// char c;
-  //
-	// while (1) {
-	// 	c = *ascii_buffer;
-	// 	if (c >= 48 && c <= 57) {
-	// 		number[offset++] = c;
-	// 		now++;
-	// 	} else {
-	// 		// number ends
-	// 		if (now == 10) {
-	// 			count++;
-	// 			number[offset] = '\0';
-	// 			printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
-	// 		}
-	// 		now = 0;
-	// 		offset = 0;
-	// 	}
-	// 	if (c == 0) break;
-	// 	ascii_buffer++;
-	// }
-	// if (now == 10) {
-	// 	count++;
-	// 	number[offset] = '\0';
-	// 	printk(KERN_INFO "BINDERFILTER: find possible phone number: {%s}\n", number);
-	// }
-	// return count;
-
     char* patterns[] = {"*[!0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][!0-9]*",
     "*[!0-9][0-9][0-9][0-9]-[0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][!0-9]*",
     "*[!0-9]([0-9][0-9][0-9])[0-9][0-9][0-9][0-9][0-9][0-9][0-9][!0-9]*",
@@ -608,7 +621,7 @@ static int count_phone_numbers(char* ascii_buffer)
 
     for (i = 0; i < len; i++){
         pattern = patterns[i];
-        if (!glob_match(ascii_buffer, pattern)) count++;
+        if (glob_match(pattern, ascii_buffer)) count++;
     }
     return count;
 }
