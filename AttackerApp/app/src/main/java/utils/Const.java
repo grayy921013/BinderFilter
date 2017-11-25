@@ -12,6 +12,8 @@ import java.io.File;
 public class Const {
     public static final String PACKAGE_NAME = "com.example.zhehui.receiveapplication";
     public static final String CLASS_NAME = "com.example.zhehui.receiveapplication.MainActivity";
+    public static final String SERVICE_NAME = "com.example.zhehui.receiveapplication.MainService";
+    public static final String AIDL_SERVICE_NAME = "com.example.zhehui.receiveapplication.AIDLService";
     public static final String CASE_FOLDER = Environment.getExternalStorageDirectory().getAbsolutePath()+
             File.separator+"LightBringer"+File.separator;
     public static final int request_code = 10001;
