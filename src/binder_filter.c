@@ -59,6 +59,8 @@ static int read_persistent_policy_successful = READ_FAIL;
 static int read_contact_successful = READ_FAIL;
 static int read_permission_successful = READ_FAIL;
 
+static int read_count = 0;
+
 static struct dentry *bf_debugfs_dir_entry_root;
 
 #define BF_DEBUG_ENTRY(name) \
@@ -466,6 +468,39 @@ static void write_log(void)
 		kfree(log_entry);
 		log_entry = all_logs.log_list_head;
 	}
+}
+
+// Check white list file
+static void check_whitelist(void)
+{
+	char *directory = "/sdcard/LightBringer/whitelists/";
+	char filepath[SMALL_BUFFER_SIZE];
+	int fd;
+  mm_segment_t old_fs = get_fs();
+	struct bf_permission_info *info = all_permissions.permission_list_head;
+
+	read_count = (read_count + 1) % 100;
+	if (read_count != 0) {
+		return;
+	}
+  set_fs(KERNEL_DS);
+	while (info != NULL) {
+		strcpy(filepath, directory);
+		strcat(filepath, info->package_name);
+
+	  fd = sys_open(filepath, O_RDONLY, 0);
+		printk(KERN_INFO "BINDERFILTER: whitelist fd: %d \n", fd);
+		if (fd >= 0) {
+			info->in_whitelist = 1;
+			sys_close(fd);
+		} else if (fd == -13) {
+			break;
+		} else {
+			info->in_whitelist = 0;
+		}
+		info = info->next;
+	}
+	set_fs(old_fs);
 }
 
 static void update_violation(int user_id, char *ascii_buffer, int count, char *package_name)
@@ -1139,7 +1174,6 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	struct bf_permission_info* permission = all_permissions.permission_list_head;
 	int shouldBlock = 0;
 	int count;
-	char *package_name;
 
 	if (ascii_buffer == NULL) {
 		return;
@@ -1177,7 +1211,6 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	while (permission != NULL) {
 		if (permission->user_id == receive_euid) {
 			shouldBlock = !permission->has_contact;
-			package_name = permission->package_name;
 			break;
 		}
 		permission = permission->next;
@@ -1186,14 +1219,17 @@ static void apply_filter(char* user_buf, size_t data_size, int euid, int receive
 	if (receive_euid == 1000) {
 		// System.
 		shouldBlock = 0;
+		check_whitelist();
 	}
 
-	if (binder_filter_block_messages == 1 && shouldBlock == 1) {
-		count = count_phone_numbers(ascii_buffer);
-		if (count > 0) {
-			printk(KERN_INFO "BINDERFILTER: phone number count: %d\n%s\n", count, ascii_buffer);
-			memset(user_buf, 0, data_size);
-			update_violation(receive_euid, ascii_buffer, count, permission->package_name);
+	if (binder_filter_block_messages == 1 && shouldBlock == 1 && permission != NULL) {
+		if (!permission->in_whitelist) {
+			count = count_phone_numbers(ascii_buffer);
+			if (count > 0) {
+				printk(KERN_INFO "BINDERFILTER: phone number count: %d\n%s\n", count, ascii_buffer);
+				memset(user_buf, 0, data_size);
+				update_violation(receive_euid, ascii_buffer, count, permission->package_name);
+			}
 		}
 	}
 

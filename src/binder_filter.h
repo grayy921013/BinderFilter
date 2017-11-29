@@ -97,6 +97,7 @@ struct bf_permission_info {
   int has_contact;
   int user_id;
   char *package_name;
+  int in_whitelist;
   struct bf_permission_info *next;
 };
 
