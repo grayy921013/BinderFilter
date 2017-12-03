@@ -1,7 +1,5 @@
 package utils;
 
-import android.content.Context;
-import android.util.Log;
 
 import models.Case;
 
@@ -25,6 +23,12 @@ public class FileUtil {
     @Inject
     public FileUtil(){
         File file = new File(Const.CASE_FOLDER);
+        file.mkdirs();
+        file = new File(Const.BLACK_LIST_FOLDER);
+        file.mkdirs();
+        file = new File(Const.WHITE_LIST_FOLDER);
+        file.mkdirs();
+        file = new File(Const.LOG_FOLDER);
         file.mkdirs();
     }
 
@@ -104,5 +108,26 @@ public class FileUtil {
             e.printStackTrace();
         }
         return sb.toString();
+    }
+
+    public List<String> getFilesNameInFolder(String folderName){
+        File folder = new File(folderName);
+        File[] listOfFiles = folder.listFiles();
+        List<String> ret = new ArrayList<>();
+        if(listOfFiles != null){
+            for(File files : listOfFiles){
+                ret.add(files.getName());
+            }
+        }
+        return ret;
+    }
+
+    public void createFileNameInFolder(String fileName, String folderName){
+        File file = new File(folderName + fileName);
+        try {
+            file.createNewFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

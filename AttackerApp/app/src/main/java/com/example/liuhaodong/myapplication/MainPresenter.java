@@ -43,6 +43,7 @@ public class MainPresenter {
                         public void onSuccess(List<Case> value) {
                             caseListviewAdapter = new CaseListviewAdapter(value);
                             mainTarget.loadingCasesFinished(caseListviewAdapter);
+                            mainTarget.checkingLogs();
                         }
                         @Override
                         public void onError(Throwable e) {
@@ -72,6 +73,10 @@ public class MainPresenter {
     public void resetReceivedState(){
         if(caseListviewAdapter == null) return;
         caseListviewAdapter.resetReceivedState();
+    }
+
+    public void onGetLogList(){
+
     }
 
     public void setTarget(MainTarget mainTarget){

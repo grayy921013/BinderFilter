@@ -1,5 +1,7 @@
 package module;
 
+import android.app.IntentService;
+
 import com.example.liuhaodong.myapplication.MainActivity;
 
 import dagger.Component;
@@ -10,4 +12,6 @@ import dagger.Component;
 @Component(modules = MainModule.class)
 public interface MainComponent {
     void inject(MainActivity activity);
+
+    void inject(IntentService intentService);
 }

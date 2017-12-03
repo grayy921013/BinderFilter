@@ -15,6 +15,8 @@ public interface MainTarget {
 
     void loadingCasesFinished(CaseListviewAdapter adapter);
 
+    void checkingLogs();
+
     void onSend(IPC_TYPE type, List<Case> list);
 
     void onError(String errMsg);

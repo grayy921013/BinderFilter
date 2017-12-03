@@ -1,8 +1,11 @@
 package com.example.liuhaodong.myapplication;
 
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
@@ -14,7 +17,6 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
@@ -22,6 +24,7 @@ import android.widget.Toast;
 
 import com.example.zhehui.receiveapplication.IAIDLService;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.inject.Inject;
@@ -32,6 +35,7 @@ import models.Case;
 import module.DaggerMainComponent;
 import module.MainModule;
 import utils.Const;
+import utils.FileUtil;
 import utils.IPC_TYPE;
 
 public class MainActivity extends AppCompatActivity implements MainTarget{
@@ -61,6 +65,14 @@ public class MainActivity extends AppCompatActivity implements MainTarget{
 
     boolean isAIDLServiceConnected = false;
 
+    LogResultReceiver logResultReceiver;
+
+    AlertDialog logDialog;
+
+    @Inject FileUtil fileUtil;
+
+    boolean isRunning = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -82,13 +94,27 @@ public class MainActivity extends AppCompatActivity implements MainTarget{
     }
 
     @Override
+    protected void onResume() {
+        isRunning = true;
+        super.onResume();
+    }
+
+    @Override
+    protected void onStop() {
+        isRunning = false;
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         try{
             if(isServiceConnected)
                 unbindService(serviceConnection);
             if(isAIDLServiceConnected)
                 unbindService(aidlConnection);
+            unregisterReceiver(br);
         }catch (Exception e){
+
         }
         super.onDestroy();
     }
@@ -109,6 +135,16 @@ public class MainActivity extends AppCompatActivity implements MainTarget{
         recyclerView.addItemDecoration(dividerItemDecoration);
         recyclerView.setHasFixedSize(true);
         recyclerView.setAdapter(adapter);
+    }
+
+    @Override
+    public void checkingLogs() {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(LogIntentSerivce.ACTION_LOG_FIND);
+        registerReceiver(br, intentFilter);
+        Intent logIntent = new Intent(this,LogIntentSerivce.class);
+        logIntent.setAction(LogIntentSerivce.ACTION_LOG_START);
+        startService(logIntent);
     }
 
     @Override
@@ -229,4 +265,40 @@ public class MainActivity extends AppCompatActivity implements MainTarget{
             super.handleMessage(msgFromServer);
         }
     });
+
+    BroadcastReceiver br = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(intent.getAction().equals(LogIntentSerivce.ACTION_LOG_FIND)){
+                ArrayList<String> arrayList = intent.getStringArrayListExtra(LogIntentSerivce.EXTRAL_LOG_NAME_LIST);
+                if(arrayList != null && arrayList.size() > 0){
+                    String content = arrayList.get(0);
+                    LogDialog.DialogOnClick dialogOnClick = new LogDialog.DialogOnClick() {
+                        @Override
+                        public void onYes() {
+                            fileUtil.createFileNameInFolder(content,Const.BLACK_LIST_FOLDER);
+                            Intent logIntent = new Intent(MainActivity.this, LogIntentSerivce.class);
+                            logIntent.setAction(LogIntentSerivce.ACTION_LOG_START);
+                            startService(logIntent);
+                        }
+
+                        @Override
+                        public void onNo() {
+                            fileUtil.createFileNameInFolder(content,Const.WHITE_LIST_FOLDER);
+                            Intent logIntent = new Intent(MainActivity.this, LogIntentSerivce.class);
+                            logIntent.setAction(LogIntentSerivce.ACTION_LOG_START);
+                            startService(logIntent);
+                        }
+                    };
+
+                    if(isRunning) {
+                        logDialog = LogDialog.getAlertDialogInstance(MainActivity.this, dialogOnClick);
+                        logDialog.setMessage(Const.dialog_part_1 + content + Const.dialog_part_2 + Const.dialog_part_3);
+                        logDialog.setCanceledOnTouchOutside(false);
+                        logDialog.show();
+                    }
+                }
+            }
+        }
+    };
 }
